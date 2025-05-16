@@ -1,0 +1,54 @@
+upstream core-upstream {
+    server core-service:80;
+}
+
+upstream user-upstream {
+    server user-service:80;
+}
+
+upstream storage-upstream {
+    server storage-service:80;
+}
+
+map $http_x_rpc_method $app__route {
+    hostnames;
+
+    user.*      user-upstream;
+    storage.*   storage-upstream;
+    default     core-upstream;
+}
+
+server {
+    listen 80;
+
+    location / {
+        root /usr/share/nginx/html;
+    }
+
+    location /rpc {
+        client_max_body_size 32;
+        client_body_timeout 1s;
+
+        if ($request_method != POST) {
+            return 405;
+        }
+
+        if ($http_x_service_account != "service-account") {
+            return 401;
+        }
+
+        if ($http_x_service_credentials = "") {
+            return 401;
+        }
+
+        if ($http_x_rpc_method = "") {
+            return 400;
+        }
+
+        if ($http_content_type != "application/json") {
+            return 400;
+        }
+
+        proxy_pass http://$app__route;
+    }
+}

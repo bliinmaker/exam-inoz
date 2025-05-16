@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  loadbalancer:
+    image: nginx:mainline-alpine3.21
+    ports:
+      - "8080:80"
+    volumes:
+      - ./templates:/etc/nginx/templates
+      - ./frontend:/usr/share/nginx/html
+    depends_on:
+      - core-service
+      - user-service
+      - storage-service
+
+  core-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.core-service
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.user-service
+
+  storage-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.storage-service
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=${DB_NAME}
+      - DB_ADDR=${DB_ADDR}
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    image: postgres:17.4-alpine3.21
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+    ports:
+      - 127.0.0.1:5435:5432
+    volumes:
+      - database-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d app_db_1" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  migrations:
+    image: migrate/migrate
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://${DB_USER}:${DB_PASS}@database:5432/${DB_NAME}?sslmode=disable",
+        "up"
+      ]
+
+volumes:
+  database-data:

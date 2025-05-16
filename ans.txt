@@ -1,0 +1,177 @@
+Балансировка / распределение нагрузки
+
+1) использование Nginx в качестве балансировщика
+Можно использовать nginx в качестве очень эффективного HTTP-балансировщика нагрузки
+для распределения трафика между несколькими серверами приложений, а также для повышения
+производительности, масштабируемости и надёжности веб-приложений с помощью nginx.
+
+2) маршрутизация с использованием location (эндпоинты)
+с их помошью мы можем в зависимости от эндпоинта направлять на нужный сервер, тем самым
+распределяя нагрузку
+location /api/users {
+    proxy_pass http://user-service;
+}
+location /api/orders {
+    proxy_pass http://order-service;
+}
+
+3) условная маршрутизация IF
+
+используется для того чтобы проверить все правила запроса, методов, переданнх данных
+
+location /rpc/v1 {
+      client_max_body_size 4096;
+      client_body_timeout 5s;
+
+      if ($request_method != POST) {
+         return 444;
+      }
+
+      if ($http_authorization = "") {
+         return 401;
+      }
+
+      if ($http_x_rpc_method = "") {
+         return 444;
+      }
+
+      if ($http_content_type != "application/json") {
+         return 444;
+      }
+
+      proxy_pass http://$app__route;
+   }
+
+4) таблицы сопоставления MAP
+используется для того чтобы перенаправить трафик на верый сервер. В данном случае
+в зависимости от rpc метода
+
+map $http_x_rpc_method $app__route {
+   user.*  user-upstream;
+   order.*  order-upstream;
+
+   default core-upstream;
+}
+
+5) группировка сервисов UPSTRAM
+
+это группа серверов, после того как поступил запрос с метдом user.*  u запрос уходит
+в upstream user-upstram и там идет распределение по серверам
+
+upstream core-upstream {
+   server core-service-1;
+   server core-service-2:7080 weight 4;
+   server core-service-3:7080;
+   server core-service-4:7080;
+   server core-service-5:7080;
+   server core-service-6:7080;
+}
+
+upstream user-upstream {
+   server user-service-1:6080;
+   server user-service-2:6080;
+}
+
+upstream order-upstram {
+   server order-service-1:7080;
+}
+
+1) Round Robin — запросы распределяются равномерно между серверами с учётом веса сервера.
+Этот метод используется по умолчанию (нет директивы для его включения):
+
+upstream backend {
+   # no load balancing method is specified for Round Robin
+   server backend1.example.com;
+   server backend2.example.com;
+}
+
+2) Наименьшее количество подключений — запрос отправляется на сервер с
+наименьшим количеством активных подключений, при этом также учитываются веса серверов:
+
+upstream backend {
+    least_conn;
+    server backend1.example.com;
+    server backend2.example.com;
+}
+
+3) IP-хеш — сервер, на который отправляется запрос, определяется
+по IP-адресу клиента. В этом случае для вычисления хэш-значения используются
+либо первые три октета IPv4-адреса, либо весь IPv6-адрес. Этот метод гарантирует,
+что запросы с одного и того же адреса будут отправлены на один и тот же сервер, если он не занят.
+
+upstream backend {
+    ip_hash;
+    server backend1.example.com;
+    server backend2.example.com;
+}
+
+4) Общий хэш — сервер, на который отправляется запрос, определяется по заданному
+пользователем ключу, который может быть текстовой строкой, переменной или их комбинацией.
+Например, ключом может быть комбинация IP-адреса и порта источника или URI, как в этом примере:
+
+
+upstream backend {
+    hash $request_uri consistent;
+    server backend1.example.com;
+    server backend2.example.com;
+}
+
+5) Наименьшее время (только для NGINX Plus) — для каждого запроса NGINX Plus
+выбирает сервер с наименьшей средней задержкой и наименьшим количеством активных
+подключений, где наименьшая средняя задержка рассчитывается на основе того, какой
+из следующих параметров включен в директиву least_time:
+
+header – Время получения первого байта от сервера
+last_byte – Время для получения полного ответа от сервера
+last_byte inflight — Время получения полного ответа от сервера с учётом незавершённых запросов
+
+upstream backend {
+    least_time header;
+    server backend1.example.com;
+    server backend2.example.com;
+}
+
+6) Случайный выбор — каждый запрос будет передан на случайно выбранный сервер.
+Если указан параметр two, сначала NGINX случайным образом выбирает два сервера с
+учётом их веса, а затем выбирает один из этих серверов с помощью указанного метода:
+
+upstream backend {
+    random two least_time=last_byte;
+    server backend1.example.com;
+    server backend2.example.com;
+    server backend3.example.com;
+    server backend4.example.com;
+}
+
+Коды ответов HTTP в Nginx
+1xx - Информационные коды
+
+100 Continue: Сервер получил заголовки запроса и клиент должен продолжить отправку тела запроса
+101 Switching Protocols: Сервер меняет протокол по запросу клиента
+
+2xx - Успешные коды
+
+200 OK: Стандартный успешный ответ
+201 Created: Ресурс был успешно создан
+204 No Content: Запрос обработан успешно, но в ответе нет содержимого
+
+3xx - Перенаправления
+
+301 Moved Permanently: Ресурс окончательно перемещен на новый URL
+302 Found (ранее "Moved Temporarily"): Временное перенаправление
+304 Not Modified: Ресурс не изменился с момента последнего запроса
+
+4xx - Ошибки клиента
+
+400 Bad Request: Некорректный запрос
+401 Unauthorized: Требуется аутентификация
+403 Forbidden: Доступ запрещен
+404 Not Found: Ресурс не найден
+429 Too Many Requests: Слишком много запросов (часто используется для rate limiting)
+
+5xx - Ошибки сервера
+
+500 Internal Server Error: Внутренняя ошибка сервера
+502 Bad Gateway: Nginx получил неверный ответ от вышестоящего сервера
+503 Service Unavailable: Сервер временно недоступен
+504 Gateway Timeout: Тайм-аут при ожидании ответа от вышестоящего сервера

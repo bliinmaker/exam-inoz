@@ -1,0 +1,10 @@
+FROM alpine:3.21
+
+WORKDIR /app
+
+COPY ./bin/user-service /app/user-service
+RUN chmod +x /app/user-service
+
+EXPOSE 80
+
+CMD ["/app/user-service"]
